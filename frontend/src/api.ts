@@ -167,10 +167,7 @@ export function saveInvoice(id: string, fields: Partial<Record<keyof InvoiceFiel
   return saveLocalInvoice(id, fields);
 }
 
-export async function markExtractSuccess(
-  id: string,
-  result: ExtractResult,
-): Promise<StoredRecord> {
+export async function markExtractSuccess(id: string, result: ExtractResult): Promise<StoredRecord> {
   const record = await getRecord(id);
   if (!record) {
     throw new Error('Job not found.');

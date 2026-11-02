@@ -58,9 +58,7 @@ export async function putRecord(record: StoredRecord): Promise<void> {
 
 export async function getRecord(id: string): Promise<StoredRecord | null> {
   const db = await openDb();
-  const row = await requestToPromise(
-    db.transaction('records').objectStore('records').get(id),
-  );
+  const row = await requestToPromise(db.transaction('records').objectStore('records').get(id));
   return row ?? null;
 }
 
@@ -162,4 +160,3 @@ export async function saveLocalInvoice(
   await putRecord(updated);
   return toInvoice(updated);
 }
-

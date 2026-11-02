@@ -17,11 +17,7 @@ function applyCors(req, res, next) {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
-  const allowed = new Set([
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    ...extra,
-  ]);
+  const allowed = new Set(['http://localhost:5173', 'http://127.0.0.1:5173', ...extra]);
   const origin = req.headers.origin;
   const allowAny = allowed.has('*') || extra.length === 0;
   if (origin && (allowed.has(origin) || allowAny)) {

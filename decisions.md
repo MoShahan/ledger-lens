@@ -16,7 +16,7 @@
 
 8. **Default model `gemini-flash-latest`.** `gemini-2.0-flash` is shut down and returned 404. The `latest` alias tracks the current Flash model so we do not pin another retired id. Override with `GEMINI_MODEL` if needed.
 
-9. **Husky pre-commit ESLint.** Decision 4 left lint to CI so we would not add hooks at first. Commits were still able to land with ESLint errors and only fail later on GitHub. Husky + lint-staged now runs `eslint` on staged JS/TS before commit; CI still runs the full repo lint. `prepare` no-ops if `.git` is missing so `npm install` does not break on a fresh unzip.
+9. **Husky pre-commit ESLint.** Decision 4 left lint to CI so we would not add hooks at first. Commits were still able to land with ESLint errors and only fail later on GitHub. Husky + lint-staged now runs `eslint --fix` and Prettier on staged files before commit; CI still runs the full repo lint. `prepare` no-ops if `.git` is missing so `npm install` does not break on a fresh unzip.
 
 10. **Four GitHub Actions instead of two.** Combined `lint.yml` / `test.yml` hid which side failed. Checks are now Frontend lint, Frontend tests, Backend lint, and Backend tests. Frontend had no test runner, so we added Vitest for helper unit tests; backend keeps `node --test`. Typecheck stays on the frontend lint job.
 

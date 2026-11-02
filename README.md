@@ -51,7 +51,7 @@ API: [http://localhost:3001/health](http://localhost:3001/health)
 | `npm run lint`                | ESLint (including import order/groups)    |
 | `npm run lint:frontend`       | ESLint on `frontend/`                     |
 | `npm run lint:backend`        | ESLint on `backend/`                      |
-| pre-commit (husky)            | ESLint on staged JS/TS via lint-staged    |
+| pre-commit (husky)            | lint-staged: ESLint --fix + Prettier on staged files |
 | `npm run typecheck`           | Frontend TypeScript                       |
 | `npm run format`              | Prettier                                  |
 | `npm run build` / `npm start` | Optional: Express also serves `frontend/dist` |

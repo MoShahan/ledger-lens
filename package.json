@@ -27,7 +27,11 @@
     "prepare": "node -e \"if(require('fs').existsSync('.git')) require('child_process').execSync('husky',{stdio:'inherit'})\""
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx}": "eslint"
+    "*.{js,jsx,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{css,html,json}": "prettier --write"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",
