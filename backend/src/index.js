@@ -6,6 +6,7 @@ import express from 'express';
 
 import './env.js';
 import extractRouter from './routes/extract.js';
+import { pingGemini } from './services/extract.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -36,8 +37,22 @@ function applyCors(req, res, next) {
 app.use(applyCors);
 app.use(express.json());
 
-app.get('/health', (_req, res) => {
-  res.json({ ok: true });
+function health(_req, res) {
+  res.json({ ok: true, service: 'ledger-lens-api' });
+}
+
+app.get('/health', health);
+app.get('/api/health', health);
+app.get('/api/health/gemini', async (_req, res) => {
+  try {
+    const result = await pingGemini();
+    res.json(result);
+  } catch (err) {
+    const code = err.code || 'GEMINI_UNREACHABLE';
+    const message = err.message || 'Could not reach Gemini.';
+    console.error('[health] gemini', code, message);
+    res.status(503).json({ ok: false, code, error: message });
+  }
 });
 
 app.use('/api', extractRouter);

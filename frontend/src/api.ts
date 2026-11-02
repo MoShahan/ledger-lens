@@ -35,6 +35,57 @@ function apiPath(path: string) {
   return `${API_BASE}${path}`;
 }
 
+export function healthUrl() {
+  return apiPath('/api/health');
+}
+
+export type HealthCheck = {
+  ok: boolean;
+  url: string;
+  ms: number;
+  service?: string;
+};
+
+export async function fetchHealth(): Promise<HealthCheck> {
+  const url = healthUrl();
+  const started = performance.now();
+  const res = await fetch(url, { cache: 'no-store' });
+  const ms = Math.round(performance.now() - started);
+  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; service?: string };
+  if (!res.ok || data.ok !== true) {
+    throw new ExtractError('The extract API is not healthy.', 'UNHEALTHY');
+  }
+  return { ok: true, url, ms, service: data.service };
+}
+
+export function geminiHealthUrl() {
+  return apiPath('/api/health/gemini');
+}
+
+export type GeminiHealthCheck = {
+  ok: boolean;
+  url: string;
+  ms: number;
+  model?: string;
+};
+
+export async function fetchGeminiHealth(): Promise<GeminiHealthCheck> {
+  const url = geminiHealthUrl();
+  const started = performance.now();
+  const res = await fetch(url, { cache: 'no-store' });
+  const ms = Math.round(performance.now() - started);
+  const data = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    model?: string;
+    error?: string;
+    code?: string;
+  };
+  if (!res.ok || data.ok !== true) {
+    throw new ExtractError(data.error || 'Gemini is not reachable.', data.code || 'UNHEALTHY');
+  }
+  return { ok: true, url, ms, model: data.model };
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(apiPath(path), { ...options, cache: 'no-store' });
   const data = (await res.json().catch(() => ({}))) as T & ErrorBody;

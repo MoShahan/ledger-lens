@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { classifyGeminiError, normalizeExtract } from '../src/services/extract.js';
+import { classifyGeminiError, normalizeExtract, pingGemini } from '../src/services/extract.js';
 
 test('503 high demand is MODEL_OVERLOADED and retryable', () => {
   const err = new Error(
@@ -39,4 +39,18 @@ test('timeout keeps TIMEOUT and is not retryable', () => {
   const classified = classifyGeminiError(err, 'gemini-flash-latest');
   assert.equal(classified.code, 'TIMEOUT');
   assert.equal(Boolean(classified.retryable), false);
+});
+
+test('pingGemini without a key is NO_API_KEY', async () => {
+  const previous = process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+  try {
+    await pingGemini();
+    assert.fail('expected pingGemini to throw');
+  } catch (err) {
+    assert.equal(err.code, 'NO_API_KEY');
+  } finally {
+    if (previous == null) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = previous;
+  }
 });

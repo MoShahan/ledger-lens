@@ -11,6 +11,7 @@ Architecture: [ARCHITECTURE.md](./ARCHITECTURE.md)
 Data model: [ERD.md](./ERD.md)
 
 **Live:** [https://ledger-lens-demo.vercel.app/](https://ledger-lens-demo.vercel.app/)  
+**Health:** [https://ledger-lens-demo.vercel.app/health](https://ledger-lens-demo.vercel.app/health)  
 **API:** [https://ledger-lens-api-ui6w.onrender.com/health](https://ledger-lens-api-ui6w.onrender.com/health)
 
 ## Screenshots
@@ -38,6 +39,7 @@ npm run dev
 ```
 
 App: [http://localhost:5173](http://localhost:5173)  
+API health page: [http://localhost:5173/health](http://localhost:5173/health)  
 API: [http://localhost:3001/health](http://localhost:3001/health)
 
 ## Scripts

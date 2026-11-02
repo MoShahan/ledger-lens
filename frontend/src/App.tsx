@@ -1,5 +1,6 @@
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
+import Health from './pages/Health';
 import Inbox from './pages/Inbox';
 import JobWait from './pages/JobWait';
 import Review from './pages/Review';
@@ -41,6 +42,24 @@ function Sidebar() {
           </span>
           Inbox
         </NavLink>
+        <NavLink
+          to="/health"
+          className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+          title="Check whether the extract API is up"
+        >
+          <span className="nav-icon" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M2.5 8h2.2l1.3-3.2 2.2 6.4 1.4-3.2H13.5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          Health
+        </NavLink>
       </nav>
 
       <div className="sidebar-note">
@@ -59,6 +78,7 @@ export default function App() {
         <main className="main">
           <Routes>
             <Route path="/" element={<Inbox />} />
+            <Route path="/health" element={<Health />} />
             <Route path="/jobs/:jobId" element={<JobWait />} />
             <Route path="/invoices/:id" element={<Review />} />
             <Route path="*" element={<Navigate to="/" replace />} />

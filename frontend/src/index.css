@@ -465,6 +465,84 @@ button:disabled {
   margin-top: 8px;
 }
 
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+  max-width: 920px;
+  margin-bottom: 20px;
+}
+
+.health-card {
+  max-width: none;
+  height: 100%;
+  margin-top: 0;
+}
+
+.health-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.health-card-head .eyebrow {
+  margin: 0;
+}
+
+.health-card h2 {
+  min-height: 1.3em;
+}
+
+.health-card-copy {
+  flex: 1;
+  min-height: 3.2em;
+}
+
+.health-card .banner {
+  width: 100%;
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+}
+
+.health-banner-placeholder {
+  visibility: hidden;
+}
+
+.health-checked {
+  margin: 0 0 12px;
+}
+
+.health-facts {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  margin: 4px 0 0;
+}
+
+.health-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: baseline;
+  font-size: 14px;
+}
+
+.health-facts dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.health-facts dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+  word-break: break-all;
+}
+
 .progress {
   width: min(360px, 100%);
   height: 10px;
@@ -714,5 +792,9 @@ button:disabled {
 
   .invoice-status .chip {
     width: 7.75rem;
+  }
+
+  .health-grid {
+    grid-template-columns: 1fr;
   }
 }

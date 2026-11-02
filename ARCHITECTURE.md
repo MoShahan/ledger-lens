@@ -140,7 +140,9 @@ User save on Review runs `applyUserEdits` in the browser and writes IndexedDB. F
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/health` | Liveness |
+| `GET` | `/health` | Liveness (Render health check) |
+| `GET` | `/api/health` | Same payload for the UI health page |
+| `GET` | `/api/health/gemini` | Ping Gemini with the server API key |
 | `POST` | `/api/extract` | Upload PDF, return fields (multipart) |
 | `POST` | `/api/extract/samples/:key` | Extract a built-in sample |
 | `GET` | `/api/samples/:key` | Sample PDF bytes for Review preview |
@@ -167,6 +169,7 @@ Clearing site data empties the inbox. Another device or browser starts empty.
 | Route | Screen | Role |
 | --- | --- | --- |
 | `/` | Inbox | Samples, upload, infinite-scroll Recent list |
+| `/health` | Health | Two checks: extract API up, and Gemini key/connection |
 | `/jobs/:jobId` | JobWait | Progress while the extract POST runs; Retry on failure |
 | `/invoices/:id` | Review | PDF preview + editable fields + Save changes |
 

@@ -231,4 +231,33 @@ ${clipped}`;
   throw lastError;
 }
 
+export async function pingGemini() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    const error = new Error('GEMINI_API_KEY is not set on the server.');
+    error.code = 'NO_API_KEY';
+    throw error;
+  }
+
+  const timeoutMs = Number(process.env.GEMINI_PING_TIMEOUT_MS || 15000);
+  const modelId = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+  const client = new GoogleGenerativeAI(apiKey);
+  const model = client.getGenerativeModel({
+    model: modelId,
+    generationConfig: { responseMimeType: 'application/json' },
+  });
+
+  try {
+    console.log(`[gemini] ping ${modelId}`);
+    const result = await withTimeout(
+      model.generateContent('Reply with JSON only: {"ok":true}'),
+      timeoutMs,
+    );
+    result.response.text();
+    return { ok: true, model: modelId };
+  } catch (err) {
+    throw classifyGeminiError(err, modelId);
+  }
+}
+
 export { normalizeExtract };
