@@ -43,7 +43,7 @@ npm workspaces monorepo:
 | `frontend/` | Vite + React + TypeScript SPA |
 | `backend/` | Express extract API |
 | `sample-docs/` | Built-in demo PDFs |
-| `.github/workflows/` | FE/BE lint and test Actions |
+| `.github/workflows/` | `ci.yml` (lint + tests) and Vercel deploy notify |
 | `decisions.md` | Running product/stack decisions |
 | `ERD.md` | Browser storage diagram |
 
@@ -82,9 +82,11 @@ flowchart TB
   Render --> Gemini["Gemini"]
 ```
 
+- UI: [https://ledger-lens-demo.vercel.app/](https://ledger-lens-demo.vercel.app/)
+- API: [https://ledger-lens-api-ui6w.onrender.com/health](https://ledger-lens-api-ui6w.onrender.com/health)
 - Vercel builds the SPA and copies it to repo-root `dist` (`vercel.json`).
-- Render runs `npm start` (API only). Set `GEMINI_API_KEY` and `CORS_ORIGIN` (the Vercel URL).
-- Frontend calls Render via `VITE_API_URL` (must be set at Vercel **build** time).
+- Render runs `npm start` (API only). Set `GEMINI_API_KEY` and `CORS_ORIGIN=https://ledger-lens-demo.vercel.app`.
+- Frontend calls Render via `VITE_API_URL=https://ledger-lens-api-ui6w.onrender.com` (must be set at Vercel **build** time).
 
 ---
 
@@ -190,7 +192,7 @@ Patterns:
 | `GEMINI_TIMEOUT_MS` / `GEMINI_RETRIES` / `GEMINI_MAX_CHARS` | Extract tuning |
 | `MAX_UPLOAD_MB` | Upload size cap (default 10) |
 | `CORS_ORIGIN` | Allowed browser origins (Vercel URL). Empty = allow any. |
-| `VITE_API_URL` | Frontend build-time API origin (Render URL) |
+| `VITE_API_URL` | Frontend build-time API origin (`https://ledger-lens-api-ui6w.onrender.com`) |
 
 ### Failure modes
 
@@ -213,7 +215,8 @@ Patterns:
 ### Quality gates
 
 - Husky + lint-staged: ESLint on staged JS/TS
-- CI: Frontend lint (ESLint, Prettier, typecheck), Frontend Vitest, Backend lint, Backend tests (`node --test`)
+- CI: one workflow (`ci.yml`) with four jobs — Frontend lint, Frontend tests, Backend lint, Backend tests
+- Vercel deploy notify (`vercel-deploy-notify.yml`): Discord and/or Telegram on success/fail; commit comment if those secrets are missing
 
 ---
 
@@ -238,3 +241,4 @@ Documented in detail in [decisions.md](./decisions.md). Headline choices:
 | [ERD.md](./ERD.md) | Browser storage diagram |
 | [vercel.json](./vercel.json) | Vercel build / SPA rewrites |
 | [render.yaml](./render.yaml) | Render web service |
+| [vercel-deploy-notify.yml](./.github/workflows/vercel-deploy-notify.yml) | Discord / Telegram / commit comment on Vercel deploy |

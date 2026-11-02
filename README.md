@@ -10,6 +10,9 @@ Architecture: [ARCHITECTURE.md](./ARCHITECTURE.md)
 
 Data model: [ERD.md](./ERD.md)
 
+**Live:** [https://ledger-lens-demo.vercel.app/](https://ledger-lens-demo.vercel.app/)  
+**API:** [https://ledger-lens-api-ui6w.onrender.com/health](https://ledger-lens-api-ui6w.onrender.com/health)
+
 ## Screenshots
 
 ### Inbox - samples, upload, and Recent
@@ -73,8 +76,8 @@ Clearing site data wipes the list. A second computer will not see the first comp
 3. Environment:
    - `GEMINI_API_KEY` — required
    - `GEMINI_MODEL` — `gemini-3.8-flash`
-   - `CORS_ORIGIN` — your Vercel URL, e.g. `https://ledger-lens.vercel.app` (you can add this after Vercel deploys; empty allows any origin)
-4. Confirm `https://YOUR-SERVICE.onrender.com/health` returns `{ "ok": true }`.
+   - `CORS_ORIGIN` — `https://ledger-lens-demo.vercel.app` (empty allows any origin)
+4. Confirm [https://ledger-lens-api-ui6w.onrender.com/health](https://ledger-lens-api-ui6w.onrender.com/health) returns `{ "ok": true }`.
 
 The free instance sleeps when idle; the first extract after that can take ~30–50 seconds.
 
@@ -83,13 +86,24 @@ The free instance sleeps when idle; the first extract after that can take ~30–
 1. Import the same GitHub repo.
 2. `vercel.json` already sets install/build/output. Leave **Root Directory** empty (repo root), not `frontend`. If the dashboard has Output Directory set, use `dist`.
 3. Environment (needed **at build time**):
-   - `VITE_API_URL` — `https://YOUR-SERVICE.onrender.com` (no trailing slash)
+   - `VITE_API_URL` — `https://ledger-lens-api-ui6w.onrender.com` (no trailing slash)
 4. Deploy.
-5. Put the Vercel URL into Render `CORS_ORIGIN` and redeploy the API if you restricted origins.
+5. Put `https://ledger-lens-demo.vercel.app` into Render `CORS_ORIGIN` and redeploy the API if you restricted origins.
 
-### 3. Try it
+### 3. Deploy notifications
 
-Open the Vercel URL, run the **Clean** sample, wait for Review. That invoice exists only in your browser.
+`.github/workflows/vercel-deploy-notify.yml` pings when a Vercel deploy succeeds or fails (pending/canceled are ignored). Optional GitHub secrets:
+
+| Secret | Where it goes |
+| --- | --- |
+| `DISCORD_WEBHOOK_URL` | Discord channel webhook |
+| `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` | Telegram bot |
+
+If neither is set (or both sends fail), the workflow comments on the commit instead. Needs the Vercel GitHub integration, and the file must be on the default branch.
+
+### 4. Try it
+
+Open [https://ledger-lens-demo.vercel.app/](https://ledger-lens-demo.vercel.app/), run the **Clean** sample, wait for Review. That invoice exists only in your browser.
 
 ## What to try
 

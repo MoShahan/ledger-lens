@@ -34,10 +34,14 @@
 
 17. **Stable toasts; fail fast on RATE_LIMIT.** JobWait depended on a toast API recreated every render, so a failed job toast re-ran the poll effect and stacked identical errors / constant `/api/jobs/:id` fetches. Toast context is memoized, duplicates are skipped, and failed jobs rely on the page UI (no toast). Poll no longer lists `toast` as an effect dep (ref instead) and clears the interval on terminal status. Gemini 429 no longer retries or walks fallback models - that only burned free-tier quota.
 
-18. **Live URL.** Production is one Railway service at https://ledger-parser-production.up.railway.app/ - linked from the README so reviewers do not need the dashboard.
+18. **Live URL.** Production UI is https://ledger-lens-demo.vercel.app/ and the API is https://ledger-lens-api-ui6w.onrender.com/ - linked from the README so reviewers do not need the dashboards. (Was one Railway URL; that host expired.)
 
 19. **Job wait progress must not reset on every poll.** Progress effect depended on the whole `job` object, so each 1.5s poll reset percent to ~1 and the label flipped between “Reading PDF” and “Pulling text.” Restart only on status/attempt; keep previous job state when the poll payload is unchanged. API fetches use `cache: 'no-store'` (and job GET sends `Cache-Control: no-store`) so browsers stop answering polls with 304. Transient poll failures (nodemon restart / proxy ECONNRESET → client 500) only toast after 3 misses so a brief API bounce does not look like a hard failure.
 
 20. **Per-field “Looks correct,” not blanket Confirm & save.** Saving every field as user cleared the whole invoice even when only one value was accepted. Needs-review rows get a Looks correct button; Save only PATCHes touched fields (accepted or edited). Validator still skips `sourceOfTruth: 'user'`, so one accepted field can clear its flag while another keeps Needs review on Inbox.
 
 21. **No Postgres; Vercel UI + Render API.** Railway expired. The inbox does not need a shared database - each person keeps extracts in their own browser (IndexedDB). Express only extracts (unpdf + Gemini + validate) and returns JSON. That split is deployable: static SPA on Vercel (`VITE_API_URL`), stateless Node on Render (`GEMINI_API_KEY`, `CORS_ORIGIN`). We accepted Render sleep on the free API and per-browser data (clearing the cache empties the inbox).
+
+22. **One CI workflow, four jobs.** Decision 10 split lint/test into four workflow files so a red check named the side. Four files duplicated checkout/setup and cluttered Actions. They now share `ci.yml`; the four jobs still run in parallel and still fail independently.
+
+23. **Vercel deploy notify.** Preview and production deploys should show up in Discord/Telegram without opening the Vercel dashboard. `vercel-deploy-notify.yml` listens for Vercel GitHub `repository_dispatch` events, skips pending/canceled, and treats preview `ready` as success (production waits for `success` so we do not double-ping). Secrets are optional: missing Discord/Telegram config (or a failed send) falls back to a commit comment so the job stays green. The file must live on the default branch.
