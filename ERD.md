@@ -1,56 +1,35 @@
-# Ledger Lens ER diagram
+# Ledger Lens storage diagram
 
-Postgres schema from `backend/src/schema.sql`.
+Invoices live in **this browser** (IndexedDB), not Postgres. Another user, device, or a cleared cache starts empty.
 
 ```mermaid
 erDiagram
     direction LR
 
-    DOCUMENTS ||--o{ JOBS : starts
-    DOCUMENTS ||--o{ INVOICES : produces
-    JOBS ||--o| INVOICES : yields
+    RECORDS ||--o| FILES : "documentId"
 
-    DOCUMENTS {
-        uuid id PK
-        text filename
-        text storage_path
-        text source "upload or sample"
-        timestamptz created_at
+    RECORDS {
+      string id PK
+      string jobId
+      string documentId FK
+      string type "invoice or job"
+      string status
+      string filename
+      string source "upload or sample"
+      string sampleKey
+      string vendor
+      string errorCode
+      json fields
+      json issues
+      string createdAt
     }
 
-    JOBS {
-        uuid id PK
-        uuid document_id FK
-        text status "queued extracting needs_review ready failed"
-        text error_code "nullable"
-        text error_message "nullable"
-        timestamptz created_at
-        timestamptz updated_at
-    }
-
-    INVOICES {
-        uuid id PK
-        uuid document_id FK
-        uuid job_id FK
-        text status "needs_review or ready"
-        jsonb fields
-        jsonb issues
-        timestamptz created_at
-        timestamptz updated_at
+    FILES {
+      string id PK "documentId"
+      blob blob "PDF bytes"
     }
 ```
 
-## Relationships
+Flow: **file blob** + **queued record** → extract API → **invoice record** (or **failed job**). Retry re-sends the same blob. Save edits update `fields` / `issues` / `status` on that record.
 
-| From | To | Cardinality | Notes |
-| --- | --- | --- | --- |
-| `documents` | `jobs` | 1 → N | One PDF can have many extract attempts (including retries). |
-| `documents` | `invoices` | 1 → N | Structured results for that file. |
-| `jobs` | `invoices` | 1 → 0..1 | A successful job yields one invoice; failed jobs have none. |
-
-Deleting a document cascades to its jobs and invoices (`ON DELETE CASCADE`).
-
-## Indexes
-
-- `jobs_status_idx` on `jobs(status)`
-- `invoices_status_idx` on `invoices(status)`
+Samples also keep a copy of the PDF in `files` so Review can preview without calling the API again.

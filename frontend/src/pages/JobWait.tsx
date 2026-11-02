@@ -1,18 +1,54 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
-import { fetchJob, retryJob } from '../api';
+import {
+  ExtractError,
+  extractPdf,
+  extractSample,
+  fetchSamplePdf,
+  markExtractFailure,
+  markExtractSuccess,
+  retryJob,
+} from '../api';
+import { getFile, getRecord, putFile, toJob, type StoredRecord } from '../store';
 import { useToast } from '../toast';
 import type { Job } from '../types';
 import { errorMessage, estimateProgress, progressLabel } from '../utils';
 
-const POLL_MS = 1500;
+const extracts = new Map<string, Promise<StoredRecord>>();
 
 function isTerminal(job: Job) {
   return (
     job.status === 'failed' ||
     (Boolean(job.invoiceId) && (job.status === 'needs_review' || job.status === 'ready'))
   );
+}
+
+function extractError(err: unknown): { message: string; code: string } {
+  if (err instanceof ExtractError) {
+    return { message: err.message, code: err.code };
+  }
+  return { message: errorMessage(err), code: 'EXTRACT_FAILED' };
+}
+
+async function runExtractForRecord(record: StoredRecord): Promise<StoredRecord> {
+  let result;
+  if (record.sampleKey) {
+    result = await extractSample(record.sampleKey);
+    try {
+      const pdf = await fetchSamplePdf(record.sampleKey);
+      await putFile(record.documentId, pdf);
+    } catch (err) {
+      console.warn('[job] sample PDF preview skipped', err);
+    }
+  } else {
+    const file = await getFile(record.documentId);
+    if (!file) {
+      throw new ExtractError('The PDF is no longer in this browser.', 'NO_FILE');
+    }
+    result = await extractPdf(file);
+  }
+  return markExtractSuccess(record.id, result);
 }
 
 export default function JobWait() {
@@ -31,66 +67,69 @@ export default function JobWait() {
     if (!jobId) return undefined;
 
     let cancelled = false;
-    let timer: number | undefined;
-    let inFlight = false;
-    let consecutiveFailures = 0;
 
-    async function poll() {
-      if (cancelled || inFlight) return;
-      inFlight = true;
+    async function run() {
       try {
-        const next = await fetchJob(jobId as string);
+        const record = await getRecord(jobId as string);
         if (cancelled) return;
-        consecutiveFailures = 0;
-        setJob((prev) => {
-          if (
-            prev &&
-            prev.status === next.status &&
-            prev.invoiceId === next.invoiceId &&
-            prev.error_code === next.error_code &&
-            prev.error_message === next.error_message
-          ) {
-            return prev;
-          }
-          return next;
-        });
-        setError('');
-
-        if (next.invoiceId && (next.status === 'needs_review' || next.status === 'ready')) {
-          if (timer !== undefined) window.clearInterval(timer);
-          timer = undefined;
-          toastRef.current.success(
-            next.status === 'needs_review' ? 'Extracted - needs review' : 'Extracted and ready',
-          );
-          navigate(`/invoices/${next.invoiceId}`, { replace: true });
+        if (!record) {
+          setError('Job not found.');
           return;
         }
 
-        if (next.status === 'failed') {
-          if (timer !== undefined) window.clearInterval(timer);
-          timer = undefined;
-          console.error('[job] failed', next.error_code, next.error_message);
+        setJob(toJob(record));
+        setError('');
+
+        if (record.type === 'invoice') {
+          toastRef.current.success(
+            record.status === 'needs_review' ? 'Extracted - needs review' : 'Extracted and ready',
+          );
+          navigate(`/invoices/${record.id}`, { replace: true });
+          return;
         }
+
+        if (record.status === 'failed') {
+          return;
+        }
+
+        setJob((current) => (current ? { ...current, status: 'extracting' } : current));
+
+        const key = `${jobId}:${attempt}`;
+        let pending = extracts.get(key);
+        if (!pending) {
+          pending = runExtractForRecord(record).catch(async (err: unknown) => {
+            extracts.delete(key);
+            const info = extractError(err);
+            const failed = await markExtractFailure(jobId as string, info);
+            throw Object.assign(err instanceof Error ? err : new Error(info.message), {
+              record: failed,
+            });
+          });
+          extracts.set(key, pending);
+        }
+
+        const updated = await pending;
+        if (cancelled) return;
+        toastRef.current.success(
+          updated.status === 'needs_review' ? 'Extracted - needs review' : 'Extracted and ready',
+        );
+        navigate(`/invoices/${updated.id}`, { replace: true });
       } catch (err) {
-        consecutiveFailures += 1;
-        console.error('[job] poll failed', err);
-        // Nodemon restarts / brief proxy blips show as 500/ECONNRESET — keep polling.
-        if (!cancelled && consecutiveFailures >= 3) {
-          const message = errorMessage(err);
-          setError(message);
-          toastRef.current.error(message);
+        if (cancelled) return;
+        const failed = (err as { record?: StoredRecord }).record;
+        if (failed) {
+          setJob(toJob(failed));
+          setError('');
+          return;
         }
-      } finally {
-        inFlight = false;
+        const message = errorMessage(err);
+        setError(message);
       }
     }
 
-    poll();
-    timer = window.setInterval(poll, POLL_MS);
-
+    run();
     return () => {
       cancelled = true;
-      if (timer !== undefined) window.clearInterval(timer);
     };
   }, [attempt, jobId, navigate]);
 
@@ -100,9 +139,11 @@ export default function JobWait() {
   useEffect(() => {
     if (!jobStatus || jobDone) return undefined;
     const started = Date.now();
-    setPercent(estimateProgress(jobStatus, 0));
+    setPercent(estimateProgress(jobStatus === 'queued' ? 'extracting' : jobStatus, 0));
     const tick = window.setInterval(() => {
-      setPercent(estimateProgress(jobStatus, Date.now() - started));
+      setPercent(
+        estimateProgress(jobStatus === 'queued' ? 'extracting' : jobStatus, Date.now() - started),
+      );
     }, 120);
     return () => window.clearInterval(tick);
   }, [attempt, jobStatus, jobDone]);

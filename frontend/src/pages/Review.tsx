@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { fetchInvoice, saveInvoice } from '../api';
+import { fetchInvoice, fetchSamplePdf, saveInvoice } from '../api';
 import FieldRow from '../components/FieldRow';
 import StatusChip from '../components/StatusChip';
+import { getFile, putFile } from '../store';
 import { useToast } from '../toast';
 import type { FieldKey, Invoice, InvoiceFields } from '../types';
 import { errorMessage, fieldText } from '../utils';
@@ -28,6 +29,7 @@ export default function Review() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState('');
 
   useEffect(() => {
     if (!id) return;
@@ -45,6 +47,34 @@ export default function Review() {
         toast.error(message);
       });
   }, [id, toast]);
+
+  useEffect(() => {
+    if (!invoice?.document_id) return undefined;
+    const documentId = invoice.document_id;
+    const sampleKey = invoice.sampleKey;
+    let url = '';
+    let cancelled = false;
+
+    (async () => {
+      let blob = await getFile(documentId);
+      if (!blob && sampleKey) {
+        try {
+          blob = await fetchSamplePdf(sampleKey);
+          await putFile(documentId, blob);
+        } catch (err) {
+          console.warn('[review] sample PDF missing', err);
+        }
+      }
+      if (!blob || cancelled) return;
+      url = URL.createObjectURL(blob);
+      setPreviewUrl(url);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [invoice?.document_id, invoice?.sampleKey]);
 
   const mismatch = useMemo(
     () => (invoice?.issues || []).find((issue) => issue.code === 'TOTAL_MISMATCH'),
@@ -160,7 +190,11 @@ export default function Review() {
       <div className="review-grid">
         <section className="preview-card">
           <div className="card-label">Source document</div>
-          <iframe title="Invoice PDF" src={invoice.previewUrl} />
+          {previewUrl ? (
+            <iframe title="Invoice PDF" src={previewUrl} />
+          ) : (
+            <p className="muted">PDF preview is stored in this browser only.</p>
+          )}
         </section>
         <form className="fields-card" onSubmit={onSave}>
           <div className="card-label">Extracted fields</div>

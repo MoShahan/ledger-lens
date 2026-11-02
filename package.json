@@ -11,8 +11,6 @@
   ],
   "scripts": {
     "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev -w backend\" \"npm run dev -w frontend\"",
-    "dev:all": "docker compose up -d --wait && npm run dev",
-    "dev:down": "docker compose down",
     "build": "npm run build -w frontend",
     "start": "npm run start -w backend",
     "lint": "eslint .",

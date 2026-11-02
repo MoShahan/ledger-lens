@@ -36,6 +36,8 @@ export type InvoiceIssue = {
   field?: string;
 };
 
+export type SampleKey = 'clean' | 'mismatch' | 'missing' | 'euro' | 'baddate';
+
 export type Job = {
   id: string;
   document_id: string;
@@ -54,6 +56,7 @@ export type Invoice = {
   issues: InvoiceIssue[];
   filename?: string;
   previewUrl?: string;
+  sampleKey?: SampleKey;
 };
 
 export type InboxItem = {

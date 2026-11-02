@@ -20,20 +20,17 @@ Not in scope: auth, chat/RAG, OCR-as-main-path, search filters, multi-tenant, or
 ```mermaid
 flowchart LR
   User["AP / ops user"]
-  Browser["Browser SPA"]
-  App["Express app\nAPI + static UI"]
-  PG[(Postgres)]
-  Disk["Upload volume"]
+  Browser["Browser SPA\nIndexedDB"]
+  API["Express extract API"]
   Gemini["Google Gemini API"]
 
   User --> Browser
-  Browser -->|"HTTP /api, static assets"| App
-  App --> PG
-  App --> Disk
-  App -->|"PDF text + JSON schema"| Gemini
+  Browser -->|"POST /api/extract"| API
+  API -->|"PDF text + JSON schema"| Gemini
+  Browser -->|"inbox, edits, PDFs"| Browser
 ```
 
-One process serves both UI and API in production. Gemini never sees the PDF bytes - only extracted text (capped).
+The API is stateless. Gemini never sees the PDF bytes - only extracted text (capped). Each browser keeps its own invoices; they are not shared.
 
 ---
 
@@ -44,11 +41,11 @@ npm workspaces monorepo:
 | Path | Role |
 | --- | --- |
 | `frontend/` | Vite + React + TypeScript SPA |
-| `backend/` | Express (JS) API, job processor, static host |
+| `backend/` | Express extract API |
 | `sample-docs/` | Built-in demo PDFs |
 | `.github/workflows/` | FE/BE lint and test Actions |
 | `decisions.md` | Running product/stack decisions |
-| `ERD.md` | Data model diagram |
+| `ERD.md` | Browser storage diagram |
 
 ---
 
@@ -60,36 +57,34 @@ npm workspaces monorepo:
 flowchart TB
   Vite["Vite :5173\nproxies /api"]
   Express["Express :3001"]
-  PGLocal[(Docker Postgres)]
-  Uploads["./uploads"]
+  IDB["Browser IndexedDB"]
 
   Vite --> Express
-  Express --> PGLocal
-  Express --> Uploads
+  Vite --> IDB
   Express --> Gemini["Gemini"]
 ```
 
-- `npm run dev:all` starts Compose Postgres, then Vite + Express.
+- `npm run dev` starts Vite + Express.
 - Vite proxies `/api` and `/health` to the API so the browser stays same-origin.
 
-### Production (Railway)
+### Production (Vercel + Render)
 
 ```mermaid
 flowchart TB
   Client["Browser"]
-  Service["Single Railway service\nnpm start → Express"]
-  PGRail[(Railway Postgres)]
-  Vol["Volume /data/uploads"]
+  Vercel["Vercel\nstatic SPA"]
+  Render["Render\nExpress API"]
+  IDB["IndexedDB on that browser"]
 
-  Client -->|"one public URL"| Service
-  Service --> PGRail
-  Service --> Vol
-  Service --> Gemini["Gemini"]
+  Client --> Vercel
+  Client -->|"VITE_API_URL + CORS"| Render
+  Client --> IDB
+  Render --> Gemini["Gemini"]
 ```
 
-- Build: Nixpacks `npm ci --include=dev` then `npm run build` (Vite → `frontend/dist`)
-- Start: `npm start` (Express serves `frontend/dist` + `/api` + `/health`)
-- Config: `railway.json` (Nixpacks, healthcheck `/health`)
+- Vercel builds `frontend/dist` (`vercel.json`).
+- Render runs `npm start` (API only). Set `GEMINI_API_KEY` and `CORS_ORIGIN` (the Vercel URL).
+- Frontend calls Render via `VITE_API_URL` (must be set at Vercel **build** time).
 
 ---
 
@@ -98,32 +93,26 @@ flowchart TB
 ```mermaid
 sequenceDiagram
   participant UI as React Inbox
+  participant IDB as IndexedDB
   participant API as Express
-  participant FS as Upload store
-  participant DB as Postgres
-  participant Job as processJob
   participant PDF as unpdf
   participant AI as Gemini
   participant Val as validate
 
-  UI->>API: POST /api/documents or /samples/:key
-  API->>FS: store PDF
-  API->>DB: insert document + job queued
-  API-->>UI: job id
-  API->>Job: enqueue setImmediate
-  UI->>API: poll GET /api/jobs/:id
-
-  Job->>DB: status extracting
-  Job->>FS: read PDF
-  Job->>PDF: extract text
-  Job->>AI: generateContent JSON fields
-  Job->>Val: validate fields
+  UI->>IDB: save queued job + PDF blob
+  UI->>UI: /jobs/:id wait screen
+  UI->>API: POST /api/extract or /api/extract/samples/:key
+  API->>PDF: extract text
+  API->>AI: generateContent JSON fields
+  API->>Val: validate fields
   alt success
-    Job->>DB: insert invoice, job ready or needs_review
-    UI->>API: GET /api/invoices/:id
+    API-->>UI: fields + issues + status
+    UI->>IDB: store invoice
+    UI->>UI: /invoices/:id Review
   else failure
-    Job->>DB: job failed + error_code
-    UI->>UI: Retry → POST /api/jobs/:id/retry
+    API-->>UI: error code
+    UI->>IDB: failed job
+    UI->>UI: Retry re-posts the same PDF
   end
 ```
 
@@ -131,7 +120,7 @@ sequenceDiagram
 
 `queued` → `extracting` → `needs_review` | `ready` | `failed`
 
-Retries clear any prior invoice for that job and re-queue extraction.
+Retry re-sends the PDF already stored in this browser.
 
 ### Extract details
 
@@ -141,7 +130,7 @@ Retries clear any prior invoice for that job and re-queue extraction.
 4. **Clip** - PDF text truncated (~8k chars) before the prompt
 5. **Validator** - missing invoice #, bad date/currency, line-item sum vs total (`TOTAL_MISMATCH`)
 
-User PATCH on `/api/invoices/:id` applies edits, re-validates, and marks fields `sourceOfTruth: user`.
+User save on Review runs `applyUserEdits` in the browser and writes IndexedDB. Fields become `sourceOfTruth: user`.
 
 ---
 
@@ -149,31 +138,25 @@ User PATCH on `/api/invoices/:id` applies edits, re-validates, and marks fields 
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/health` | Liveness + DB ping |
-| `POST` | `/api/documents` | Upload PDF (multipart) |
-| `POST` | `/api/documents/samples/:key` | Start sample (`clean`, `mismatch`, `missing`, `euro`, `baddate`) |
-| `GET` | `/api/documents/:id/file` | Serve stored PDF for Review iframe |
-| `GET` | `/api/jobs/:id` | Poll job (+ `invoiceId` when done) |
-| `POST` | `/api/jobs/:id/retry` | Re-run failed extraction |
-| `GET` | `/api/invoices/:id` | Load invoice + `previewUrl` |
-| `PATCH` | `/api/invoices/:id` | Save user field edits |
-| `GET` | `/api/inbox?limit&offset` | Paginated recent invoices + failed jobs |
+| `GET` | `/health` | Liveness |
+| `POST` | `/api/extract` | Upload PDF, return fields (multipart) |
+| `POST` | `/api/extract/samples/:key` | Extract a built-in sample |
+| `GET` | `/api/samples/:key` | Sample PDF bytes for Review preview |
 
-Jobs are processed **in-process** (`setImmediate`). No Redis/queue worker. Fine for a single-instance demo; not multi-replica safe.
+Inbox, job retry, invoice load, and save are **local** (IndexedDB). No Postgres.
 
 ---
 
 ## 7. Data model
 
-Three tables. See [ERD.md](./ERD.md) for the diagram.
+Two IndexedDB stores in this browser only. See [ERD.md](./ERD.md).
 
-| Table | Responsibility |
+| Store | Responsibility |
 | --- | --- |
-| `documents` | File metadata + `storage_path`, `source` (`upload` \| `sample`) |
-| `jobs` | Extract attempt lifecycle and failure codes |
-| `invoices` | Validated `fields` + `issues` JSONB, status `needs_review` \| `ready` |
+| `records` | Job/invoice metadata, extracted fields, validator issues, edits |
+| `files` | PDF blobs for preview and retry |
 
-Cascade deletes: removing a document removes its jobs and invoices.
+Clearing site data empties the inbox. Another device or browser starts empty.
 
 ---
 
@@ -182,13 +165,13 @@ Cascade deletes: removing a document removes its jobs and invoices.
 | Route | Screen | Role |
 | --- | --- | --- |
 | `/` | Inbox | Samples, upload, infinite-scroll Recent list |
-| `/jobs/:jobId` | JobWait | Progress bar while polling; Retry on failure |
-| `/invoices/:id` | Review | PDF preview + editable fields + Confirm & save |
+| `/jobs/:jobId` | JobWait | Progress while the extract POST runs; Retry on failure |
+| `/invoices/:id` | Review | PDF preview + editable fields + Save changes |
 
 Patterns:
 
 - React Router SPA
-- Shared `api.ts` fetch helpers
+- `api.ts` talks to Render for extract; IndexedDB for everything else
 - Toasts for success/error
 - Field/status chips for trust and review state
 - TypeScript types mirror invoice/job shapes
@@ -201,13 +184,13 @@ Patterns:
 
 | Variable | Use |
 | --- | --- |
-| `DATABASE_URL` | Postgres (required) |
-| `PORT` | Listen port (Railway injects) |
-| `UPLOAD_DIR` | PDF storage (`./uploads` local, `/data/uploads` on Railway) |
+| `PORT` | Listen port (Render injects) |
 | `GEMINI_API_KEY` | Server-only |
 | `GEMINI_MODEL` | Default `gemini-3.8-flash` |
 | `GEMINI_TIMEOUT_MS` / `GEMINI_RETRIES` / `GEMINI_MAX_CHARS` | Extract tuning |
 | `MAX_UPLOAD_MB` | Upload size cap (default 10) |
+| `CORS_ORIGIN` | Allowed browser origins (Vercel URL). Empty = allow any. |
+| `VITE_API_URL` | Frontend build-time API origin (Render URL) |
 
 ### Failure modes
 
@@ -221,10 +204,11 @@ Patterns:
 
 ### Security (demo posture)
 
-- No auth - anyone with the URL can upload
+- No auth
 - API key never sent to the browser
 - Digital PDFs only; no OCR pipeline
-- Single shared workspace
+- Data is per-browser, not a shared workspace
+- Set `CORS_ORIGIN` in production so other sites cannot burn your Gemini quota
 
 ### Quality gates
 
@@ -238,10 +222,10 @@ Patterns:
 Documented in detail in [decisions.md](./decisions.md). Headline choices:
 
 - **Gemini over OpenAI** - free-tier API usable for a demo
-- **One Railway service** - one URL, no split frontend/API deploy
+- **Vercel UI + Render API** - no Postgres; browser holds inbox/review state
 - **AI + validator + human review** - not a layout-specific parser
 - **TS frontend / JS backend** - type the product surface; ship Express faster
-- **In-process jobs** - simplest for one instance; swap later if needed
+- **Synchronous extract POST** - no job table or poll loop on the server
 
 ---
 
@@ -249,8 +233,8 @@ Documented in detail in [decisions.md](./decisions.md). Headline choices:
 
 | Doc | Contents |
 | --- | --- |
-| [README.md](./README.md) | Setup, scripts, Railway checklist |
-| [PROJECT_PLAN.md](./PROJECT_PLAN.md) | Scope and build plan |
+| [README.md](./README.md) | Setup, scripts, Vercel + Render deploy |
 | [decisions.md](./decisions.md) | Why each major choice |
-| [ERD.md](./ERD.md) | Schema ER diagram |
-| [railway.json](./railway.json) | Build / start / healthcheck |
+| [ERD.md](./ERD.md) | Browser storage diagram |
+| [vercel.json](./vercel.json) | Vercel build / SPA rewrites |
+| [render.yaml](./render.yaml) | Render web service |

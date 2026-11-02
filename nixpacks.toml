@@ -1,9 +1,0 @@
-# Nixpacks install already mounts node_modules/.cache — do not re-run npm ci in build.
-[phases.install]
-cmds = ["npm ci --include=dev"]
-
-[phases.build]
-cmds = ["npm run build"]
-
-[start]
-cmd = "npm start"

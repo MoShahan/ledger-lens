@@ -45,7 +45,7 @@ function Sidebar() {
 
       <div className="sidebar-note">
         <p className="sidebar-note-title">How it works</p>
-        <p>Review uncertain invoice fields. Your edit is the source of truth.</p>
+        <p>Review uncertain fields. Extracts stay in this browser and are not shared.</p>
       </div>
     </aside>
   );
