@@ -1,0 +1,357 @@
+# Notify Discord and/or Telegram when a Vercel deployment succeeds or fails.
+# Pending, canceled, skipped, and ignored deploys do not send anything.
+#
+# Optional GitHub Actions secrets (missing ones are skipped; the job stays green):
+#   DISCORD_WEBHOOK_URL
+#   TELEGRAM_BOT_TOKEN
+#   TELEGRAM_CHAT_ID
+# If neither chat app is configured (or both sends fail), a comment is posted
+# on the commit instead. Copy this file as-is across projects.
+#
+# Requires the Vercel GitHub integration (automatic on git-connected projects).
+# The workflow file must exist on the default branch to receive these events.
+
+name: Vercel Deploy Notify
+
+on:
+  repository_dispatch:
+    types:
+      - vercel.deployment.success
+      - vercel.deployment.ready
+      - vercel.deployment.error
+      - vercel.deployment.failed
+
+permissions:
+  contents: write
+  deployments: read
+  pull-requests: read
+
+jobs:
+  notify:
+    name: ${{ (github.event.action == 'vercel.deployment.success' || github.event.action == 'vercel.deployment.ready') && 'Deploy succeeded' || 'Deploy failed' }}
+    # Preview builds emit `ready`. Production auto-promotes emit `success`.
+    # Skip production `ready` so the later success/fail event is the only ping.
+    if: >
+      github.event.action != 'vercel.deployment.ready' ||
+      (
+        github.event.client_payload.environment != 'production' &&
+        github.event.client_payload.environment != 'Production'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GH_TOKEN: ${{ github.token }}
+      EVENT_TYPE: ${{ github.event.action }}
+      PROJECT: ${{ github.event.client_payload.project.name }}
+      ENVIRONMENT: ${{ github.event.client_payload.environment }}
+      BRANCH: ${{ github.event.client_payload.git.ref }}
+      SHA: ${{ github.event.client_payload.git.sha }}
+      SHORT_SHA: ${{ github.event.client_payload.git.shortSha }}
+      DEPLOY_URL: ${{ github.event.client_payload.url }}
+      DEPLOY_ERROR: ${{ github.event.client_payload.error }}
+      STATE_DETAIL: ${{ github.event.client_payload.state.detail }}
+      ALIASES_JSON: ${{ toJSON(github.event.client_payload.alias) }}
+      REPO: ${{ github.repository }}
+      SERVER_URL: ${{ github.server_url }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Collect deployment details
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          html() { jq -nr --arg t "${1:-}" '$t | @html'; }
+          first_line() {
+            local text="${1:-}"
+            text="${text%%$'\n'*}"
+            printf '%s' "${text:0:180}"
+          }
+          dash() { if [ -n "${1:-}" ]; then printf '%s' "$1"; else printf '—'; fi; }
+          format_duration() {
+            local s="$1" h m r
+            [ "$s" -lt 0 ] && s=0
+            h=$((s / 3600)); m=$(((s % 3600) / 60)); r=$((s % 60))
+            if [ "$h" -gt 0 ]; then echo "${h}h ${m}m ${r}s"
+            elif [ "$m" -gt 0 ]; then echo "${m}m ${r}s"
+            else echo "${r}s"
+            fi
+          }
+
+          PROJECT="${PROJECT:-${REPO##*/}}"
+          ENVIRONMENT="${ENVIRONMENT:-unknown}"
+          ENV_LABEL="$(printf '%s' "$ENVIRONMENT" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')"
+          BRANCH="${BRANCH#refs/heads/}"
+          BRANCH="${BRANCH#refs/tags/}"
+          BRANCH="${BRANCH:-unknown}"
+          SHORT_SHA="${SHORT_SHA:-${SHA:0:7}}"
+          SERVER_URL="${SERVER_URL:-https://github.com}"
+          REASON="$(first_line "${DEPLOY_ERROR:-$STATE_DETAIL}")"
+
+          LIVE_URL="$(printf '%s' "${ALIASES_JSON:-null}" | jq -r 'if type=="array" and length>0 then .[0]|tostring else empty end')"
+          if [ -n "$LIVE_URL" ] && [[ "$LIVE_URL" != http* ]]; then
+            LIVE_URL="https://$LIVE_URL"
+          fi
+          LIVE_URL="${LIVE_URL:-$DEPLOY_URL}"
+          SITE_LINK=""
+          [[ "${LIVE_URL:-}" == http* ]] && SITE_LINK="$LIVE_URL"
+
+          COMMIT_MESSAGE=""
+          AUTHOR_LOGIN=""
+          AUTHOR_NAME=""
+          PR_NUMBER=""
+          PR_TITLE=""
+          PR_URL=""
+          DURATION=""
+
+          if [ -n "${SHA:-}" ]; then
+            COMMIT_JSON="$(gh api "repos/${REPO}/commits/${SHA}" 2>/dev/null || echo '{}')"
+            COMMIT_MESSAGE="$(first_line "$(jq -r '.commit.message // empty' <<<"$COMMIT_JSON")")"
+            AUTHOR_LOGIN="$(jq -r '.author.login // empty' <<<"$COMMIT_JSON")"
+            AUTHOR_NAME="$(jq -r '.commit.author.name // empty' <<<"$COMMIT_JSON")"
+
+            PR_JSON="$(gh api "repos/${REPO}/commits/${SHA}/pulls" 2>/dev/null || echo '[]')"
+            PR_NUMBER="$(jq -r '.[0].number // empty' <<<"$PR_JSON")"
+            PR_TITLE="$(first_line "$(jq -r '.[0].title // empty' <<<"$PR_JSON")")"
+            PR_TITLE="${PR_TITLE:0:80}"
+            PR_URL="$(jq -r '.[0].html_url // empty' <<<"$PR_JSON")"
+
+            DEP_JSON="$(gh api "repos/${REPO}/deployments?sha=${SHA}&per_page=5" 2>/dev/null || echo '[]')"
+            DEP_CREATED="$(jq -r '.[0].created_at // empty' <<<"$DEP_JSON")"
+            DEP_ID="$(jq -r '.[0].id // empty' <<<"$DEP_JSON")"
+            if [ -n "$DEP_CREATED" ]; then
+              END_AT=""
+              if [ -n "$DEP_ID" ]; then
+                END_AT="$(gh api "repos/${REPO}/deployments/${DEP_ID}/statuses" --jq '.[0].created_at // empty' 2>/dev/null || true)"
+              fi
+              START_S="$(date -d "$DEP_CREATED" +%s 2>/dev/null || true)"
+              if [ -n "${END_AT:-}" ]; then
+                END_S="$(date -d "$END_AT" +%s 2>/dev/null || true)"
+              else
+                END_S="$(date +%s)"
+              fi
+              if [ -n "${START_S:-}" ] && [ -n "${END_S:-}" ]; then
+                DURATION="$(format_duration $((END_S - START_S)))"
+              fi
+            fi
+          fi
+
+          COMMIT_URL=""
+          BRANCH_URL=""
+          [ -n "${SHA:-}" ] && COMMIT_URL="${SERVER_URL}/${REPO}/commit/${SHA}"
+          [ "$BRANCH" != "unknown" ] && BRANCH_URL="${SERVER_URL}/${REPO}/tree/${BRANCH}"
+
+          if [ -n "$AUTHOR_LOGIN" ]; then
+            PUSHER_MD="[@${AUTHOR_LOGIN}](${SERVER_URL}/${AUTHOR_LOGIN})"
+            PUSHER_HTML="<a href=\"$(html "${SERVER_URL}/${AUTHOR_LOGIN}")\">@$(html "$AUTHOR_LOGIN")</a>"
+          else
+            PUSHER_MD="${AUTHOR_NAME:-Unknown}"
+            PUSHER_HTML="$(html "$PUSHER_MD")"
+          fi
+
+          case "$EVENT_TYPE" in
+            vercel.deployment.success|vercel.deployment.ready)
+              EMOJI="🚀"
+              VERB="succeeded"
+              TITLE="🚀 ${ENV_LABEL} deploy succeeded"
+              COLOR=2278750
+              ;;
+            *)
+              EMOJI="💥"
+              VERB="failed"
+              TITLE="💥 ${ENV_LABEL} deploy failed"
+              COLOR=15680580
+              ;;
+          esac
+
+          BRANCH_FIELD="\`$BRANCH\`"
+          [ -n "$BRANCH_URL" ] && BRANCH_FIELD="[\`$BRANCH\`]($BRANCH_URL)"
+          COMMIT_FIELD="—"
+          [ -n "$SHORT_SHA" ] && COMMIT_FIELD="\`$SHORT_SHA\`"
+          [ -n "$COMMIT_URL" ] && COMMIT_FIELD="[\`$SHORT_SHA\`]($COMMIT_URL)"
+
+          jq -n \
+            --arg title "$TITLE" \
+            --arg desc "$COMMIT_MESSAGE" \
+            --argjson color "$COLOR" \
+            --arg project "$(dash "$PROJECT")" \
+            --arg environment "$(dash "$ENV_LABEL")" \
+            --arg branch "$BRANCH_FIELD" \
+            --arg commit "$COMMIT_FIELD" \
+            --arg pusher "$PUSHER_MD" \
+            --arg duration "$(dash "$DURATION")" \
+            --arg repo "$REPO" \
+            --arg url "$SITE_LINK" \
+            --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+            '{
+              username: "Vercel",
+              allowed_mentions: {parse: []},
+              embeds: [{
+                title: $title,
+                color: $color,
+                fields: [
+                  {name: "📦 Project", value: $project, inline: true},
+                  {name: "🌍 Environment", value: $environment, inline: true},
+                  {name: "🌿 Branch", value: $branch, inline: true},
+                  {name: "📝 Commit", value: $commit, inline: true},
+                  {name: "👤 Pushed by", value: $pusher, inline: true},
+                  {name: "⏱️ Duration", value: $duration, inline: true}
+                ],
+                footer: {text: ($repo + " · Vercel")},
+                timestamp: $ts
+              }]
+            }
+            | if $desc != "" then .embeds[0].description = ("**" + $desc + "**") else . end
+            | if $url != "" then .embeds[0].url = $url else . end' \
+            > "$RUNNER_TEMP/discord.json"
+
+          if [ -n "$PR_NUMBER" ]; then
+            jq --arg v "#${PR_NUMBER} ${PR_TITLE}" --arg u "$PR_URL" \
+              '.embeds[0].fields += [{
+                name: "🔀 Pull request",
+                value: (if $u == "" then $v else "[" + $v + "](" + $u + ")" end),
+                inline: false
+              }]' \
+              "$RUNNER_TEMP/discord.json" > "$RUNNER_TEMP/discord.json.tmp"
+            mv "$RUNNER_TEMP/discord.json.tmp" "$RUNNER_TEMP/discord.json"
+          fi
+          if [ -n "$SITE_LINK" ]; then
+            jq --arg v "$SITE_LINK" \
+              '.embeds[0].fields += [{name: "🔗 Deployment", value: $v, inline: false}]' \
+              "$RUNNER_TEMP/discord.json" > "$RUNNER_TEMP/discord.json.tmp"
+            mv "$RUNNER_TEMP/discord.json.tmp" "$RUNNER_TEMP/discord.json"
+          fi
+          if [ "$VERB" = "failed" ] && [ -n "$REASON" ]; then
+            jq --arg v "$REASON" \
+              '.embeds[0].fields += [{name: "⚠️ Reason", value: $v, inline: false}]' \
+              "$RUNNER_TEMP/discord.json" > "$RUNNER_TEMP/discord.json.tmp"
+            mv "$RUNNER_TEMP/discord.json.tmp" "$RUNNER_TEMP/discord.json"
+          fi
+
+          {
+            echo "$(html "$EMOJI") <b>$(html "$ENV_LABEL") deploy $(html "$VERB")</b>"
+            echo
+            echo "📦 <b>Project:</b> $(html "$PROJECT")"
+            echo "🌍 <b>Environment:</b> $(html "$ENV_LABEL")"
+            echo "🌿 <b>Branch:</b> <code>$(html "$BRANCH")</code>"
+            if [ -n "$COMMIT_URL" ]; then
+              echo "📝 <b>Commit:</b> <a href=\"$(html "$COMMIT_URL")\"><code>$(html "${SHORT_SHA:-$SHA}")</code></a>"
+            else
+              echo "📝 <b>Commit:</b> $(html "${SHORT_SHA:-Unknown commit}")"
+            fi
+            [ -n "$COMMIT_MESSAGE" ] && echo "💬 <b>Message:</b> $(html "$COMMIT_MESSAGE")"
+            echo "👤 <b>Pushed by:</b> $PUSHER_HTML"
+            [ -n "$DURATION" ] && echo "⏱️ <b>Duration:</b> $(html "$DURATION")"
+            if [ -n "$PR_NUMBER" ]; then
+              if [ -n "$PR_URL" ]; then
+                echo "🔀 <b>PR:</b> <a href=\"$(html "$PR_URL")\">#${PR_NUMBER}</a> $(html "$PR_TITLE")"
+              else
+                echo "🔀 <b>PR:</b> #${PR_NUMBER} $(html "$PR_TITLE")"
+              fi
+            fi
+            if [ -n "$SITE_LINK" ]; then
+              echo
+              echo "🔗 <a href=\"$(html "$SITE_LINK")\">Open deployment</a>"
+            fi
+            if [ "$VERB" = "failed" ] && [ -n "$REASON" ]; then
+              echo
+              echo "⚠️ $(html "$REASON")"
+            fi
+            true
+          } > "$RUNNER_TEMP/telegram.txt"
+
+          {
+            echo "## $TITLE"
+            echo
+            echo "**${PROJECT}** · ${ENV_LABEL}"
+            echo
+            [ -n "$COMMIT_MESSAGE" ] && echo "> $COMMIT_MESSAGE" && echo
+            if [ -n "$BRANCH_URL" ]; then echo "- 🌿 **Branch:** [\`$BRANCH\`]($BRANCH_URL)"; else echo "- 🌿 **Branch:** \`$BRANCH\`"; fi
+            if [ -n "$COMMIT_URL" ]; then echo "- 📝 **Commit:** [\`$SHORT_SHA\`]($COMMIT_URL) — $COMMIT_MESSAGE"; else echo "- 📝 **Commit:** ${SHORT_SHA:-Unknown commit}"; fi
+            echo "- 👤 **Pushed by:** $PUSHER_MD"
+            [ -n "$DURATION" ] && echo "- ⏱️ **Duration:** $DURATION"
+            [ -n "$PR_NUMBER" ] && echo "- 🔀 **Pull request:** [#${PR_NUMBER}]($PR_URL) $PR_TITLE"
+            [ -n "$SITE_LINK" ] && echo "- 🔗 **Deployment:** $SITE_LINK"
+            [ "$VERB" = "failed" ] && [ -n "$REASON" ] && echo "- ⚠️ **Reason:** $REASON"
+            [ -n "${RUN_URL:-}" ] && echo && echo "[View workflow run]($RUN_URL)"
+            true
+          } > "$RUNNER_TEMP/github.md"
+
+          cat "$RUNNER_TEMP/github.md" >> "$GITHUB_STEP_SUMMARY"
+          : > "$RUNNER_TEMP/notified"
+
+      - name: Send Discord notification
+        shell: bash
+        run: |
+          if [ -z "${DISCORD_WEBHOOK_URL:-}" ] || [[ "$DISCORD_WEBHOOK_URL" != https://* ]]; then
+            echo "Discord webhook not configured — skipping"
+            exit 0
+          fi
+
+          echo "Sending Discord notification"
+          code="$(curl -sS -o "$RUNNER_TEMP/discord-resp" -w "%{http_code}" \
+            -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            --data-binary @"$RUNNER_TEMP/discord.json" 2>/dev/null || true)"
+
+          case "$code" in
+            200|201|204)
+              echo "Discord notification sent"
+              echo discord >> "$RUNNER_TEMP/notified"
+              ;;
+            *)
+              echo "::warning::Discord notification failed (HTTP ${code:-0})"
+              ;;
+          esac
+
+      - name: Send Telegram notification
+        shell: bash
+        run: |
+          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "Telegram secrets not configured — skipping"
+            exit 0
+          fi
+
+          echo "Sending Telegram notification"
+          jq -n \
+            --arg chat_id "$TELEGRAM_CHAT_ID" \
+            --rawfile text "$RUNNER_TEMP/telegram.txt" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}' \
+            > "$RUNNER_TEMP/telegram.json"
+
+          code="$(curl -sS -o "$RUNNER_TEMP/telegram-resp" -w "%{http_code}" \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            --data-binary @"$RUNNER_TEMP/telegram.json" 2>/dev/null || true)"
+
+          if [ "$code" = "200" ]; then
+            echo "Telegram notification sent"
+            echo telegram >> "$RUNNER_TEMP/notified"
+          else
+            echo "::warning::Telegram notification failed (HTTP ${code:-0})"
+          fi
+
+      - name: Fall back to GitHub comment
+        shell: bash
+        run: |
+          if [ -s "$RUNNER_TEMP/notified" ]; then
+            echo "Already notified via: $(tr '\n' ' ' < "$RUNNER_TEMP/notified")"
+            exit 0
+          fi
+
+          echo "No chat app delivered a message — falling back to a GitHub commit comment"
+          if [ -z "${SHA:-}" ]; then
+            echo "::warning::No commit SHA available for GitHub fallback"
+            echo "Notification recorded in the workflow summary only"
+            exit 0
+          fi
+
+          if jq -n --rawfile body "$RUNNER_TEMP/github.md" '{body: $body}' \
+            | gh api "repos/${REPO}/commits/${SHA}/comments" --input - >/dev/null; then
+            echo "GitHub commit comment posted"
+          else
+            echo "::warning::Could not post a GitHub commit comment"
+            echo "Notification recorded in the workflow summary only"
+          fi
