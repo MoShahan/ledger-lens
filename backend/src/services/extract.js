@@ -169,8 +169,8 @@ ${clipped}`;
 
   console.log(`[gemini] prompt ${prompt.length} chars, models ${modelIds.join(' -> ')}`);
   const client = new GoogleGenerativeAI(apiKey);
-  const retries = Number(process.env.GEMINI_RETRIES || 2);
-  const retryMs = Number(process.env.GEMINI_RETRY_MS || 1500);
+  const retries = Number(process.env.GEMINI_RETRIES || 4);
+  const retryMs = Number(process.env.GEMINI_RETRY_MS || 2500);
   let lastError;
 
   for (const modelId of modelIds) {
@@ -218,7 +218,8 @@ ${clipped}`;
           );
           throw classified;
         }
-        const wait = retryMs * attempt;
+        const wait =
+          classified.code === 'MODEL_OVERLOADED' ? retryMs * attempt * 2 : retryMs * attempt;
         console.warn(
           `[gemini] ${classified.code} attempt ${attempt}/${retries}, retry in ${wait}ms`,
         );
@@ -241,21 +242,32 @@ export async function pingGemini() {
 
   const timeoutMs = Number(process.env.GEMINI_PING_TIMEOUT_MS || 15000);
   const modelId = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-  const client = new GoogleGenerativeAI(apiKey);
-  const model = client.getGenerativeModel({
-    model: modelId,
-    generationConfig: { responseMimeType: 'application/json' },
-  });
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}?key=${encodeURIComponent(apiKey)}`;
 
   try {
     console.log(`[gemini] ping ${modelId}`);
-    const result = await withTimeout(
-      model.generateContent('Reply with JSON only: {"ok":true}'),
-      timeoutMs,
-    );
-    result.response.text();
+    const response = await withTimeout(fetch(url), timeoutMs);
+    if (response.status === 400 || response.status === 401 || response.status === 403) {
+      const error = new Error('Gemini rejected the API key.');
+      error.code = 'INVALID_API_KEY';
+      throw error;
+    }
+    if (response.status === 404) {
+      const error = new Error(
+        `Gemini model "${modelId}" was not found. Set GEMINI_MODEL to a current Flash id.`,
+      );
+      error.code = 'MODEL_NOT_FOUND';
+      throw error;
+    }
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      const error = new Error(body || `Gemini ping failed (${response.status})`);
+      error.status = response.status;
+      throw classifyGeminiError(error, modelId);
+    }
     return { ok: true, model: modelId };
   } catch (err) {
+    if (err.code) throw err;
     throw classifyGeminiError(err, modelId);
   }
 }

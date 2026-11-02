@@ -32,7 +32,7 @@ You need Node 20+ and a free [Gemini API key](https://aistudio.google.com/).
 
 ```bash
 cp .env.example .env
-# put GEMINI_API_KEY in .env
+# put GEMINI_API_KEY in .env (the only required local key)
 npm install
 npm run generate:samples
 npm run dev
@@ -75,13 +75,30 @@ Clearing site data wipes the list. A second computer will not see the first comp
 
 1. New **Web Service** from this GitHub repo (or use `render.yaml`).
 2. Build `npm ci`, start `npm start`, health check `/health`.
-3. Environment:
-   - `GEMINI_API_KEY` — required
-   - `GEMINI_MODEL` — `gemini-3.8-flash`
-   - `CORS_ORIGIN` — `https://ledger-lens-demo.vercel.app` (empty allows any origin)
+3. Environment — see **Backend environment** below. You only need to set the required keys; the rest already have defaults in code.
 4. Confirm [https://ledger-lens-api-ui6w.onrender.com/health](https://ledger-lens-api-ui6w.onrender.com/health) returns `{ "ok": true }`.
 
 The free instance sleeps when idle; the first extract after that can take ~30–50 seconds.
+
+### Backend environment
+
+Copy `.env.example` to `.env` locally. On Render, add the same names in the service **Environment** tab. You do **not** need to paste every key — omitted optional keys use the defaults in code (`backend/src/services/extract.js` and `backend/src/index.js`).
+
+| Variable | Required | Default | Where |
+| --- | --- | --- | --- |
+| `GEMINI_API_KEY` | **yes** | none | local `.env` and Render |
+| `CORS_ORIGIN` | recommended in production | empty = allow any origin | Render: `https://ledger-lens-demo.vercel.app` |
+| `PORT` | no | `3001` | Render injects this — do not set it |
+| `GEMINI_MODEL` | no | `gemini-3.8-flash` | optional override |
+| `GEMINI_FALLBACK_MODELS` | no | `gemini-3.8-flash,gemini-flash-latest` | optional override |
+| `GEMINI_TIMEOUT_MS` | no | `25000` | extract timeout |
+| `GEMINI_PING_TIMEOUT_MS` | no | `15000` | `/api/health/gemini` timeout |
+| `GEMINI_RETRIES` | no | `4` | 503 retries |
+| `GEMINI_RETRY_MS` | no | `2500` | retry delay |
+| `GEMINI_MAX_CHARS` | no | `8000` | PDF text clip before the prompt |
+| `MAX_UPLOAD_MB` | no | `10` | upload size cap |
+
+Frontend (Vercel, **build-time**): `VITE_API_URL=https://ledger-lens-api-ui6w.onrender.com`.
 
 ### 2. Vercel - UI
 

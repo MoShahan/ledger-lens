@@ -142,10 +142,10 @@ export default function Health() {
           title="Gemini"
           headingUp="Gemini key is working"
           headingDown="Cannot reach Gemini"
-          headingWait="Pinging Gemini…"
-          bodyUp="The server API key was accepted and Gemini answered. Invoice extraction can use the model."
-          bodyDown="Gemini did not accept the key or did not respond. Invoice extracts will fail until this is fixed."
-          bodyWait="Sending a tiny ping to Gemini. This can take several seconds."
+          headingWait="Checking Gemini…"
+          bodyUp="The server can reach Gemini with this API key. Invoice extraction can use the model."
+          bodyDown="The API key is missing, invalid, or Gemini did not respond. Invoice extracts will fail until this is fixed."
+          bodyWait="Checking that the server key can reach Gemini."
           endpoint={geminiHealthUrl()}
           view={gemini}
         />

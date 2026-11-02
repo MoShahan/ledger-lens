@@ -142,7 +142,7 @@ User save on Review runs `applyUserEdits` in the browser and writes IndexedDB. F
 | --- | --- | --- |
 | `GET` | `/health` | Liveness (Render health check) |
 | `GET` | `/api/health` | Same payload for the UI health page |
-| `GET` | `/api/health/gemini` | Ping Gemini with the server API key |
+| `GET` | `/api/health/gemini` | Validate the Gemini API key (model lookup, not a generate call) |
 | `POST` | `/api/extract` | Upload PDF, return fields (multipart) |
 | `POST` | `/api/extract/samples/:key` | Extract a built-in sample |
 | `GET` | `/api/samples/:key` | Sample PDF bytes for Review preview |
@@ -187,15 +187,22 @@ Patterns:
 
 ### Configuration
 
-| Variable | Use |
-| --- | --- |
-| `PORT` | Listen port (Render injects) |
-| `GEMINI_API_KEY` | Server-only |
-| `GEMINI_MODEL` | Default `gemini-3.8-flash` |
-| `GEMINI_TIMEOUT_MS` / `GEMINI_RETRIES` / `GEMINI_MAX_CHARS` | Extract tuning |
-| `MAX_UPLOAD_MB` | Upload size cap (default 10) |
-| `CORS_ORIGIN` | Allowed browser origins (Vercel URL). Empty = allow any. |
-| `VITE_API_URL` | Frontend build-time API origin (`https://ledger-lens-api-ui6w.onrender.com`) |
+Backend env is documented in the README and `.env.example`. Only `GEMINI_API_KEY` is required; the rest have defaults if unset on Render.
+
+| Variable | Required | Default | Use |
+| --- | --- | --- | --- |
+| `GEMINI_API_KEY` | yes | none | Server-only Gemini key |
+| `CORS_ORIGIN` | recommended in prod | empty = allow any | Vercel origin |
+| `PORT` | no | `3001` (Render injects) | Listen port |
+| `GEMINI_MODEL` | no | `gemini-3.8-flash` | Primary model |
+| `GEMINI_FALLBACK_MODELS` | no | `gemini-3.8-flash,gemini-flash-latest` | Fallback ids |
+| `GEMINI_TIMEOUT_MS` | no | `25000` | Extract timeout |
+| `GEMINI_PING_TIMEOUT_MS` | no | `15000` | Health ping timeout |
+| `GEMINI_RETRIES` | no | `4` | 503 retries |
+| `GEMINI_RETRY_MS` | no | `2500` | Retry delay |
+| `GEMINI_MAX_CHARS` | no | `8000` | PDF text clip |
+| `MAX_UPLOAD_MB` | no | `10` | Upload size cap |
+| `VITE_API_URL` | yes on Vercel | empty (Vite proxy in local) | Frontend build-time API origin |
 
 ### Failure modes
 
