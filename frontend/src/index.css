@@ -471,7 +471,7 @@ button:disabled {
   gap: 16px;
   align-items: stretch;
   max-width: 920px;
-  margin-bottom: 20px;
+  margin-bottom: 28px;
 }
 
 .health-card {
@@ -513,7 +513,7 @@ button:disabled {
 }
 
 .health-checked {
-  margin: 0 0 12px;
+  margin: 8px 0 16px;
 }
 
 .health-facts {
