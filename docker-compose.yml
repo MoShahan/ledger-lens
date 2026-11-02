@@ -4,13 +4,13 @@ services:
     environment:
       POSTGRES_USER: ledger
       POSTGRES_PASSWORD: ledger
-      POSTGRES_DB: ledgerparse
+      POSTGRES_DB: ledgerlens
     ports:
       - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ledger -d ledgerparse']
+      test: ['CMD-SHELL', 'pg_isready -U ledger -d ledgerlens']
       interval: 2s
       timeout: 5s
       retries: 15

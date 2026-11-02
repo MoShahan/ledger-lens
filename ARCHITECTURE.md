@@ -1,8 +1,8 @@
-# Ledger Parse - architecture design
+# Ledger Lens - architecture design
 
 ## 1. Purpose
 
-Ledger Parse turns messy vendor invoice PDFs into structured, reviewable data.
+Ledger Lens turns messy vendor invoice PDFs into structured, reviewable data.
 
 The hard problem is not “call an LLM.” Extraction is often wrong. The product therefore:
 

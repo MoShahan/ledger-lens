@@ -1,5 +1,5 @@
 {
-  "name": "ledgerparse",
+  "name": "ledger-lens",
   "private": true,
   "type": "module",
   "engines": {

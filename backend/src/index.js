@@ -53,7 +53,7 @@ async function start() {
   }
   await initSchema();
   app.listen(port, () => {
-    console.log(`Ledger Parse listening on ${port}`);
+    console.log(`Ledger Lens listening on ${port}`);
   });
 }
 

@@ -1,4 +1,4 @@
-# LedgerParse ER diagram
+# Ledger Lens ER diagram
 
 Postgres schema from `backend/src/schema.sql`.
 

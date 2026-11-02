@@ -14,7 +14,7 @@ function Sidebar() {
     <aside className="sidebar">
       <Link to="/" className="brand" title="Go to inbox">
         <img className="brand-mark" src="/favicon.svg" alt="" width={28} height={28} />
-        Ledger Parse
+        Ledger Lens
       </Link>
 
       <p className="nav-label">Navigate</p>

@@ -1,4 +1,4 @@
-# Ledger Parse
+# Ledger Lens
 
 Turn messy vendor invoices into structured data you can review and trust.
 
