@@ -81,7 +81,7 @@ The free instance sleeps when idle; the first extract after that can take ~30–
 ### 2. Vercel - UI
 
 1. Import the same GitHub repo.
-2. `vercel.json` already sets install/build/output. Do not set Root Directory to `frontend`.
+2. `vercel.json` already sets install/build/output. Leave **Root Directory** empty (repo root), not `frontend`. If the dashboard has Output Directory set, use `dist`.
 3. Environment (needed **at build time**):
    - `VITE_API_URL` — `https://YOUR-SERVICE.onrender.com` (no trailing slash)
 4. Deploy.

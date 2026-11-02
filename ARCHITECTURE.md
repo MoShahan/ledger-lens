@@ -82,7 +82,7 @@ flowchart TB
   Render --> Gemini["Gemini"]
 ```
 
-- Vercel builds `frontend/dist` (`vercel.json`).
+- Vercel builds the SPA and copies it to repo-root `dist` (`vercel.json`).
 - Render runs `npm start` (API only). Set `GEMINI_API_KEY` and `CORS_ORIGIN` (the Vercel URL).
 - Frontend calls Render via `VITE_API_URL` (must be set at Vercel **build** time).
 
